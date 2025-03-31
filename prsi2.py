@@ -80,15 +80,22 @@ def forward(context_words, W1, W2):
     y_pred = softmax(u)
     return x, h, y_pred
 
-def cross_entropy_loss(y_pred, y_true):
-    return -np.log(y_pred[y_true] + 1e-9)
+def cross_entropy_loss(y_pred, target):
+    target_idx = word2idx[target]  # Получаем индекс целевого слова
+    return -np.log(y_pred[target_idx] + 1e-9)  # Вычисляем потери только для правильного слова
 
 def backward(x, h, y_pred, y_true, W1, W2, learning_rate):
-    y_true_one_hot = one_hot_encoding(y_true, vocab_size)
+    y_true_idx = word2idx[y_true]  # Преобразуем слово в индекс
+    y_true_one_hot = np.zeros(vocab_size)
+    y_true_one_hot[y_true_idx] = 1
+    
     error = y_pred - y_true_one_hot
     dW2 = np.outer(h, error)
     dW1 = np.outer(x, np.dot(W2, error))
-    return dW1, dW2
+    
+    W2 -= learning_rate * dW2
+    W1 -= learning_rate * dW1
+    return W1, W2
 
 # Обучение модели
 for d in embedding_dims:
