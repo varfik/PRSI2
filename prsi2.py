@@ -4,7 +4,7 @@ import numpy as np
 from tqdm import tqdm
 import time
 from collections import defaultdict
-
+import matplotlib.pyplot as plt
 
 filename = "Достоевский том 1-5.txt"
 
@@ -34,7 +34,7 @@ word_freq = defaultdict(int)
 for word in text:
     word_freq[word] += 1
 
-words = [word for word, freq in word_freq.items() if (len(word)>3) and (freq >= 4)]
+words = [word for word, freq in word_freq.items() if (len(word)>3) and (freq >= 6)]
 print(len(text))
 print(len(words))
 
@@ -67,6 +67,17 @@ def generate_cbow_data(text, word2idx, L=2):
         y.append(target)
     return np.array(X), np.array(y)
 
+def plot_training_progress(epoch, total_epochs, loss, stage="Word2Vec"):
+    progress = (epoch + 1) / total_epochs * 100
+    plt.figure(figsize=(10, 2))
+    plt.barh(0, progress, color='skyblue')
+    plt.text(progress/2, 0, 
+             f"{stage} | Эпоха {epoch+1}/{total_epochs} | Loss: {loss:.4f}", 
+             va='center', ha='center', color='black', fontsize=10)
+    plt.xlim(0, 100)
+    plt.axis('off')
+    plt.show()
+
 L = 4
 X_cbow, y_cbow = generate_cbow_data(words, word2idx, L)
 print("Пример данных CBOW:", X_cbow[0], "→", y_cbow[0])
@@ -88,6 +99,9 @@ class Word2Vec:
     def train(self, X_train, y_train, epochs=5, learning_rate=0.01):
         for epoch in range(epochs):
             loss = 0
+            for i in tqdm(range(0, len(X_train), 
+                          desc=f"Обучение (d={self.W1.shape[1]})",
+                          bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} [{percentage:3.0f}%]"):
             for X, y in zip(X_train, y_train):
                 # Forward pass
                 hidden = np.mean(self.W1[X], axis=0)  # (d,)
