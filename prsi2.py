@@ -1,8 +1,10 @@
 import os
 import re
 import numpy as np
-from tqdm import tqdm  # Для красивого прогресс-бара
-import time  # Для измерения времени
+from tqdm import tqdm
+import time
+from collections import defaultdict
+
 
 filename = "Достоевский том 1-5.txt"
 
