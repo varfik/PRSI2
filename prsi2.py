@@ -4,8 +4,6 @@ import numpy as np
 from tqdm import tqdm  # Для красивого прогресс-бара
 import time  # Для измерения времени
 
-print(os.listdir())
-
 filename = "Достоевский том 1-5.txt"
 
 # Чтение файла с обработкой ошибок
@@ -29,14 +27,22 @@ print(text[:1000])
 
 # Токенизация
 text = text.split()
-tokens = text
-print(f"\nОбщее количество токенов: {len(tokens)}")
+# Словарь для подсчета частоты слов
+word_freq = defaultdict(int)
+for word in text:
+    word_freq[word] += 1
 
-# Создание словаря
-word2idx = {word: idx for idx, word in enumerate(set(tokens))}
+words = [word for word, freq in word_freq.items() if (len(word)>3) and (freq >= 4)]
+print(len(text))
+print(len(words))
+
+# Словарь "слово - индекс"
+word2idx = {word: idx for idx, word in enumerate(words)}
+
+# Словарь "индекс - слово"
 idx2word = {idx: word for word, idx in word2idx.items()}
 vocab_size = len(word2idx)
-print(f"Размер словаря: {vocab_size}")
+print("Размер словаря:", vocab_size)
 
 # Параметры модели
 L = 4  # Количество слов в контексте
@@ -46,132 +52,128 @@ learning_rate = 0.1
 batch_size = 128  # Размер батча для ускорения обучения
 
 # Создание обучающих данных
-print("\nСоздание обучающих данных...")
-data = []
-for i in range(L, len(tokens) - L):
-    context = tokens[i-L:i]
-    target = tokens[i]
-    data.append((context, target))
+def generate_cbow_data(text, word2idx, L=2):
+    X, y = [], []
+    for i in range(L, len(text) - L):
+        context = [
+            word2idx[text[j]] 
+            for j in range(i - L, i + L + 1) 
+            if j != i
+        ]
+        target = word2idx[text[i]]
+        X.append(context)
+        y.append(target)
+    return np.array(X), np.array(y)
 
-print(f"Создано {len(data)} обучающих примеров")
-print("\nПримеры данных:")
-for i in range(5):
-    print(f"{i+1}. Контекст: {data[i][0]} → Целевое слово: {data[i][1]}")
+L = 4
+X_cbow, y_cbow = generate_cbow_data(words, word2idx, L)
+print("Пример данных CBOW:", X_cbow[0], "→", y_cbow[0])
+class Word2Vec:
+    def __init__(self, vocab_size, d):
+        self.W1 = np.random.randn(vocab_size, d) * 0.01  # Эмбеддинги
+        self.W2 = np.random.randn(d, vocab_size) * 0.01  # Выходной слой
 
-# Функции модели
-def initialize_weights(vocab_size, d):
-    W1 = np.random.randn(vocab_size, d) * 0.01
-    W2 = np.random.randn(d, vocab_size) * 0.01
-    return W1, W2
+    def softmax(self, x):
+        e_x = np.exp(x - np.max(x))
+        return e_x / e_x.sum(axis=1, keepdims=True)
 
-def one_hot_encoding(word, vocab_size):
-    vector = np.zeros(vocab_size)
-    vector[word2idx[word]] = 1
-    return vector
+    def forward(self, X):
+        # Усредняем эмбеддинги контекстных слов
+        hidden = np.mean(self.W1[X], axis=1)  # (batch_size, d)
+        output = np.dot(hidden, self.W2)      # (batch_size, vocab_size)
+        return self.softmax(output)
 
-def softmax(x):
-    exp_x = np.exp(x - np.max(x))
-    return exp_x / exp_x.sum(axis=0)
+    def train(self, X_train, y_train, epochs=5, learning_rate=0.01):
+        for epoch in range(epochs):
+            loss = 0
+            for X, y in zip(X_train, y_train):
+                # Forward pass
+                hidden = np.mean(self.W1[X], axis=0)  # (d,)
+                output = np.dot(hidden, self.W2)       # (vocab_size,)
+                probs = self.softmax(output[np.newaxis, :])[0]
 
-def forward(context_words, W1, W2):
-    x = np.mean(np.array([one_hot_encoding(word, vocab_size) for word in context_words]), axis=0)
-    h = np.dot(W1.T, x)
-    u = np.dot(W2.T, h)
-    y_pred = softmax(u)
-    return x, h, y_pred
+                # Ошибка (cross-entropy)
+                loss += -np.log(probs[y])
 
-def cross_entropy_loss(y_pred, target):
-    target_idx = word2idx[target]  # Получаем индекс целевого слова
-    return -np.log(y_pred[target_idx] + 1e-9)  # Вычисляем потери только для правильного слова
+                # Backpropagation
+                grad_output = probs
+                grad_output[y] -= 1
 
-def backward(x, h, y_pred, y_true, W1, W2, learning_rate):
-    y_true_idx = word2idx[y_true]  # Преобразуем слово в индекс
-    y_true_one_hot = np.zeros(vocab_size)
-    y_true_one_hot[y_true_idx] = 1
+                grad_W2 = np.outer(hidden, grad_output)
+                grad_hidden = np.dot(self.W2, grad_output)
+
+                # Обновляем веса
+                self.W2 -= learning_rate * grad_W2
+                for word_idx in X:
+                    self.W1[word_idx] -= learning_rate * grad_hidden / len(X)
+
+            print(f"Epoch {epoch}, Loss: {loss / len(X_train)}")
+
+# Обучаем три модели CBOW
+embedding_dims = [100, 500, 1000]
+cbow_models = {}
+
+for dim in embedding_dims:
+    print(f"\nTraining CBOW with d={dim}")
+    model = Word2Vec(vocab_size, dim)
+    model.train(X_cbow, y_cbow, epochs=10)
+    cbow_models[dim] = model.W1  # Сохраняем эмбеддинги
+
+# Подготовка данных (аналогично Skip-gram)
+def prepare_sequences_cbow(text, word2idx, L=4):
+    X, y = [], []
+    for i in range(L, len(text)):
+        context = text[i-L:i]
+        target = text[i]
+        X.append([word2idx[w] for w in context])
+        y.append(word2idx[target])
+    return torch.tensor(X), torch.tensor(y)
+
+X_cbow_nn, y_cbow_nn = prepare_sequences_cbow(text, word2idx, L=4)
+
+# Преобразуем в эмбеддинги
+def embed_sequences_cbow(X, word2vec_matrix):
+    embedded = []
+    for seq in X:
+        embedded_seq = word2vec_matrix[seq].flatten()  # Конкатенируем L векторов
+        embedded.append(embedded_seq)
+    return torch.tensor(np.array(embedded), dtype=torch.float32)
+
+# Обучаем три модели
+cbow_nn_models = {}
+for dim in embedding_dims:
+    print(f"\nTraining NN with CBOW d={dim}")
+    X_embedded = embed_sequences_cbow(X_cbow_nn, cbow_models[dim])
+    model = NextWordPredictor(dim * L, hidden_dim=500, vocab_size=vocab_size)
+    criterion = nn.CrossEntropyLoss()
+    optimizer = optim.Adam(model.parameters())
+
+    for epoch in range(10):
+        optimizer.zero_grad()
+        outputs = model(X_embedded)
+        loss = criterion(outputs, y_cbow_nn)
+        loss.backward()
+        optimizer.step()
+        print(f"Epoch {epoch}, Loss: {loss.item()}")
+    cbow_nn_models[dim] = model
+
+test_sentence = "творчество достоевского одно"  # Должно быть L=4 слова (иначе дополняйте)
+test_words = test_sentence.split()
+test_indices = [word2idx[w] for w in test_words]
+
+for dim in embedding_dims:
+    print(f"\nCBOW Model with d={dim}:")
+    model = cbow_nn_models[dim]
+    word2vec_matrix = cbow_models[dim]
     
-    error = y_pred - y_true_one_hot
-    dW2 = np.outer(h, error)
-    dW1 = np.outer(x, np.dot(W2, error))
+    # Получаем эмбеддинги
+    embedded_test = word2vec_matrix[test_indices].flatten()
+    embedded_test = torch.tensor(embedded_test, dtype=torch.float32).unsqueeze(0)
     
-    W2 -= learning_rate * dW2
-    W1 -= learning_rate * dW1
-    return W1, W2
-
-# Обучение модели
-for d in embedding_dims:
-    print(f"\n{'='*50}")
-    print(f"🔵 Начинаем обучение Word2Vec (размерность эмбеддинга d = {d})")
-    print(f"Размер словаря: {vocab_size}")
-    print(f"Количество обучающих примеров: {len(data)}")
-    print(f"Количество эпох: {epochs}")
-    print(f"Скорость обучения: {learning_rate}")
-    print(f"Размер батча: {batch_size}")
-    print(f"Дата начала: {time.strftime('%Y-%m-%d %H:%M:%S')}")
-    print(f"{'='*50}\n")
+    # Предсказание
+    with torch.no_grad():
+        output = model(embedded_test)
+        predicted_idx = torch.argmax(output).item()
     
-    W1, W2 = initialize_weights(vocab_size, d)
-    start_time = time.time()
-    
-    for epoch in range(epochs):
-        epoch_loss = 0
-        correct_predictions = 0
-        total_examples = 0
-        
-        # Создаем прогресс-бар для эпохи
-        with tqdm(data, desc=f"Эпоха {epoch+1}/{epochs}", unit="пример") as pbar:
-            for i, (context, target) in enumerate(pbar):
-                # Прямой проход
-                x, h, y_pred = forward(context, W1, W2)
-                
-                # Вычисление потерь и точности
-                loss = cross_entropy_loss(y_pred, target)
-                epoch_loss += loss
-                
-                predicted_idx = np.argmax(y_pred)
-                if predicted_idx == word2idx[target]:
-                    correct_predictions += 1
-                total_examples += 1
-                
-                # Обратное распространение (обновление весов)
-                dW1, dW2 = backward(x, h, y_pred, target, W1, W2, learning_rate)
-                W1 -= learning_rate * dW1
-                W2 -= learning_rate * dW2
-                
-                # Обновляем прогресс-бар каждые 100 примеров
-                if i % 100 == 0:
-                    pbar.set_postfix({
-                        'Потери': f"{epoch_loss/(i+1):.4f}",
-                        'Точность': f"{correct_predictions/(total_examples+1e-9):.2%}",
-                    })
-        
-        # Статистика после эпохи
-        avg_loss = epoch_loss / len(data)
-        accuracy = correct_predictions / len(data)
-        print(f"\nРезультаты эпохи {epoch+1}:")
-        print(f"Средние потери: {avg_loss:.4f}")
-        print(f"Точность: {accuracy:.2%}")
-        print(f"Время эпохи: {time.time() - start_time:.2f} сек\n")
-    
-    total_time = time.time() - start_time
-    print(f"Обучение завершено! Общее время: {total_time:.2f} сек")
-    print(f"Среднее время на эпоху: {total_time/epochs:.2f} сек")
-
-# Тестирование модели
-test_phrases = [
-    ["высокий", "худой", "мужчина", "подошел"],
-    ["князь", "сказал", "что", "он"],
-    ["она", "посмотрела", "на", "него"]
-]
-
-print("\nТестирование модели:")
-for d in embedding_dims:
-    print(f"\n🔹 Размерность эмбеддинга d = {d}:")
-    W1, W2 = initialize_weights(vocab_size, d)
-    
-    for phrase in test_phrases:
-        try:
-            _, _, y_pred = forward(phrase, W1, W2)
-            predicted_word = idx2word[np.argmax(y_pred)]
-            print(f"Контекст: {phrase} → Предсказание: '{predicted_word}'")
-        except KeyError as e:
-            print(f"Ошибка: слово {e} отсутствует в словаре")
+    print(f"Input: {test_sentence}")
+    print(f"Predicted next word: {idx2word[predicted_idx]}")
