@@ -49,7 +49,7 @@ print("Размер словаря:", vocab_size)
 # Параметры модели
 L = 4  # Количество слов в контексте
 embedding_dims = [100, 500, 1000]  # Размерности эмбеддингов
-epochs = 1
+epochs = 2
 learning_rate = 0.1
 batch_size = 128  # Размер батча для ускорения обучения
 
@@ -132,7 +132,7 @@ cbow_models = {}
 for dim in embedding_dims:
     print(f"\nTraining CBOW with d={dim}")
     model = Word2Vec(vocab_size, dim)
-    model.train(X_cbow, y_cbow, epochs=10)
+    model.train(X_cbow, y_cbow, epochs=4)
     cbow_models[dim] = model.W1  # Сохраняем эмбеддинги
 
 # Подготовка данных (аналогично Skip-gram)
