@@ -99,7 +99,7 @@ class Word2Vec:
     def train(self, X_train, y_train, epochs=5, learning_rate=0.01):
         for epoch in range(epochs):
             loss = 0
-            for i in tqdm(range(0, len(X_train), 
+            for i in tqdm(range(0, len(X_train)), 
                           desc=f"Обучение (d={self.W1.shape[1]})",
                           bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} [{percentage:3.0f}%]"):
             for X, y in zip(X_train, y_train):
